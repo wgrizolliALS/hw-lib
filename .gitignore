@@ -16,6 +16,7 @@
 !**/*.ini
 !**/*.png
 !**/*.ico
+!pyproject.toml
 
 # Override: Specifically ignore these folders and all their contents
 gitIgnored/

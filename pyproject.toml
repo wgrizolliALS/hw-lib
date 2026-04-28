@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "standalone_hw"
+version = "0.1.0"
+description = "Standalone library for hardware acquisition (LabJack/Keithley)"
+requires-python = ">=3.12"
+dependencies = [
+    "labjack-ljm",
+    "ophyd",
+    "numpy",
+    "scipy",
+    "plotly",
+    "nbformat",
+    "pandas",
+    "pyserial",
+    "matplotlib",
+    "bluesky",
+    "databroker",
+    "ipython",
+    "ipykernel",
+    "jupyter>=1.1.1",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
