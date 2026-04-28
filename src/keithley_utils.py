@@ -50,7 +50,7 @@ def print_verbose(msg: str, verbose: bool = True, timestamp: bool = False, color
 
     if verbose:
         if timestamp:
-            msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] : {msg}"
+            msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}] : {msg}"
         if color or bold:
             msg = _colorStr(msg, color=color, bold=bold)
         print(msg)
@@ -108,7 +108,6 @@ def serial_query(
                 color="cyan",
                 bold=False,
             )
-            response = None
         else:
             print_verbose(
                 f"[RESPONSE] = {response}",
@@ -150,13 +149,13 @@ def serial_batched(
     port: str,
     verbose: bool = True,
     debug: bool = DEBUG,
-    send_ind: bool = False,
+    send_individually: bool = False,
     wait_between_cmds: float = 0.05,
     check_errors: bool = True,
 ) -> str | None:
     """Send a list of serial commands either batched or individually.
 
-    If any command contains a question mark `?` (a query) or `send_ind` is
+    If any command contains a question mark `?` (a query) or `send_individually` is
     True, commands are sent one-by-one with a small delay between them. When
     safe, the list can be joined with `;` and sent as a single batched write
     which may be faster for write-only sequences.
@@ -166,7 +165,7 @@ def serial_batched(
         port: Serial device path.
         verbose: Enable informational printing.
         debug: Enable debug printing.
-        send_ind: Force sending commands individually.
+        send_individually: Force sending commands individually.
         wait_between_cmds: Seconds to sleep between commands.
         check_errors: If True, query the instrument error queue after sends.
 
@@ -174,7 +173,7 @@ def serial_batched(
         The last received response (or `None`).
     """
 
-    if any("?" in _str for _str in cmds) or send_ind:
+    if any("?" in _str for _str in cmds) or send_individually:
         for cmd in cmds:
             res = serial_query(cmd, port, verbose=verbose, debug=debug)
             if check_errors:
@@ -265,9 +264,49 @@ def check_inst_errors(port: str, verbose: bool = True, debug: bool = DEBUG):
         print_verbose(f"[INSTR ERROR] {err}", verbose=verbose, timestamp=True, color="red", bold=True)
 
 
+def wait_operation_complete(
+    port: str, poll_interval: float = 0.1, timeout=1.0, verbose: bool = True, debug: bool = DEBUG
+):
+    """Wait for the instrument to report operation complete via `*OPC?`.
+
+    This repeatedly queries `*OPC?` until it returns `1` or a timeout occurs.
+
+    Args:
+        port: Serial device path.
+        verbose: Enable informational printing.
+        debug: Enable debug printing.
+        poll_interval: Seconds to wait between polling attempts.
+    Returns:
+        True if operation complete was received, False on timeout or error.
+    """
+
+    _start_acq_time = time.time()
+    poll_interval = 0.1  # seconds
+
+    while time.time() - _start_acq_time < timeout:
+        print_verbose(
+            f"[INFO] Waiting for operation to complete... time elapsed: {time.time() - _start_acq_time:.2f}s",
+            color="purple",
+            verbose=verbose,
+        )
+
+        opc_resp = query_and_check("*OPC?", port, verbose=debug, debug=debug, check_errors=False)
+        if opc_resp == "1":
+            print_verbose(
+                f"[INFO] Operation complete received from {port} after {time.time() - _start_acq_time:.2f}s",
+                color="green",
+                verbose=verbose,
+            )
+            return
+
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Timeout waiting for operation complete on {port} after {timeout} seconds")
+
+
 def detect_keithley_devices(
     baudrate: int | None = 9600, timeout: float = 0.5, verbose: bool = False, debug: bool = DEBUG
-) -> list[dict] | None:
+) -> list[dict]:
     """Scan available serial ports to identify Keithley instruments.
 
     For each detected port the function attempts to send `*IDN?` at the
@@ -282,7 +321,7 @@ def detect_keithley_devices(
         debug: Enable debug printing.
 
     Returns:
-        A list of device dictionaries when ports were found, otherwise `None`.
+        A list of device dictionaries describing each detected port.
     """
     found_devices = []
     ports = serial.tools.list_ports.comports()
@@ -349,7 +388,7 @@ def detect_keithley_devices(
 
     if verbose:
         print_keithley_devices(found_devices)
-    return found_devices if found_devices else None
+    return found_devices
 
 
 def print_keithley_devices(devices: list[dict]):
@@ -416,6 +455,7 @@ def reset_instrument(port: str, verbose: bool = True, debug: bool = DEBUG):
         "*RST",  # Reset to known state
         ":SYST:REM",  # Remote mode for faster serial response; comment out if you want to use front panel after this
         ":FORM:ELEM READ,TIME",  # Set Format.
+        ":SYST:TIME:RESET",  # Reset internal clock to 0:00:00 for consistent timestamps
     ]  # Reset to known state, then remote mode for faster serial response
     serial_batched(cmds, port, verbose=verbose, debug=debug)
     print_verbose(
@@ -423,6 +463,10 @@ def reset_instrument(port: str, verbose: bool = True, debug: bool = DEBUG):
     )
 
     return True
+
+
+def reset_timer(port: str, verbose: bool = True, debug: bool = DEBUG):
+    return query_and_check(":SYST:TIME:RESET", port, verbose=verbose, debug=debug)
 
 
 def is_autorange_ON(port: str, verbose: bool = True, debug: bool = DEBUG) -> bool:
@@ -551,27 +595,11 @@ def set_range(
         color="purple",
     )
 
-    while True:
-        _ans = query_and_check(
-            ":READ?",
-            port,
-            wait_between_cmds=1.0,  # wait longer after :READ? to give instrument time to process and update range if needed
-            check_errors=False,
-            verbose=verbose,
-            debug=debug,
-        )
-
-        if _ans is not None:
-            break
-
-        print_verbose(
-            "[INFO] Empty response to :READ?....",
-            verbose=verbose,
-            timestamp=True,
-            color="purple",
-        )
-
     if set_curr_range is None:
+        # If autorange is enabled, we need to take a reading to let the instrument determine
+        # the appropriate range based on the signal level. The actual value of the reading
+        # is not important here; we just need to trigger the instrument's range selection logic.
+        _ans = acq_read(port, persistent=True, verbose=verbose, debug=debug)
         # Lock the detected range and turn autorange off
         print_verbose(
             "[INFO] Locking range at detected value and turning autorange off...",
@@ -627,41 +655,38 @@ def zero_instrument(
     _start_t = time.time()
     print_verbose("[INFO] Starting zero measurement...", verbose=verbose, timestamp=True, color="purple")
 
-    cmds = [  # From Manual pg 3-6
+    cmds1 = [  # From Manual pg 3-6
         # ":*RST",
-        ":SYST:TIME:RESET",
+        # ":SYST:TIME:RESET",
         ":SYST:ZCH ON",
         ":INIT",
+    ]
+    cmds2 = [
         ":SYST:ZCOR:STAT OFF",
         ":SYST:ZCOR:ACQ",
         ":SYST:ZCH OFF",
         ":SYST:ZCOR ON",
     ]
 
-    serial_batched(cmds, port, verbose=verbose, debug=debug, check_errors=True)
+    serial_batched(cmds1, port, send_individually=True, verbose=verbose, debug=debug, check_errors=False)
+    wait_operation_complete(
+        port, poll_interval=0.1, timeout=5.0, verbose=verbose, debug=debug
+    )  # wait for INIT to complete before starting zeroing sequence.
+    serial_batched(cmds2, port, send_individually=True, verbose=verbose, debug=debug, check_errors=True)
 
-    while True:
-        resp = query_and_check(
-            ":READ?",
-            port,
-            wait_between_cmds=1.0,  # wait longer after :READ? to give instrument time to process and update range if needed
-            check_errors=False,
-            verbose=verbose,
-            debug=debug,
-        )
-        if resp is not None:
-            break
+    resp = acq_read(port, persistent=True, verbose=verbose, debug=debug)
 
+    if resp is None:
         print_verbose(
-            "[INFO] Empty response to :READ? Repeating...",
+            "[WARNING] Received empty response when acquiring zero measurement. Returning None.",
+            color="red",
             verbose=verbose,
-            timestamp=True,
-            color="purple",
         )
+        return None
 
-    if resp is not None and "A" in resp:
+    if "A" in resp:
         zero_val = resp.strip().replace("A", "")
-    elif resp is not None and "," in resp:
+    elif "," in resp:
         zero_val = resp.rsplit(",")[0].strip()
     else:
         zero_val = resp.strip()
@@ -723,23 +748,34 @@ def setup_waveform_acquisition(port: str, num_points: int = 60, verbose: bool = 
     even spacing of readings.
     """
 
-    print_verbose("[INFO] Setting up waveform acquisition...", color="purple", verbose=verbose)
+    print_verbose("[INFO] Setting up buffer and trigger for waveform acquisition...", color="purple", verbose=verbose)
     _start_t = time.time()
+
+    if num_points > 2048 or num_points < 1:
+        print_verbose(f"[ERROR] num_points must be between 1 and 2048, got {num_points}", color="red", verbose=verbose)
+        raise ValueError(f"[ERROR] num_points must be between 1 and 2048, got {num_points}")
+
+    if num_points > 100 or num_points < 1:
+        print_verbose(
+            f"[WARNING] Number of Points is {num_points} > 100. Note that Download of waveform using USB is slow, around 10-25 samples/seconds.\n\t(non-linear, higher numbers are faster, but total time keeps increase. For reference, 250 samples takes 10s to download))",
+            color="red",
+            verbose=verbose,
+        )
 
     setup_recipe = [  # following pg 6-8 from manual
         # ":FORM:ELEM READ,TIME",
         # ":SENS:CURR:RANGE:AUTO OFF",
         "SYST:AZER OFF",  # turn off autozero for faster readings; comment out if you want autozero between readings
-        f":TRIG:COUNT {num_points}",  # single-trigger sampling for even spacing
-        f":TRAC:POIN {num_points}",  # specify number of readings to store: 1 to 3000
+        f":TRIG:COUNT {num_points}",  # single-trigger sampling for even spacing, 1 to 2048
+        f":TRAC:POIN {num_points}",  # specify number of readings to store: it can be 1 to 3000, but thigger is limited to 2048, so we set both to 2048 max to avoid overflow issues
         ":TRAC:CLE",  # clear buffer before starting acquisition
         ":TRAC:FEED SENS",  # Store raw input readings (as opposed to calculated values like avg and max/min).
         # ":TRAC:FEED:CONT NEXT",  # `NEXT` Enables the buffer. `NEVer disable it. MOVED TO acq_waveform function to ensure it's armed right before acquisition starts
     ]
-    serial_batched(setup_recipe, port, verbose=verbose, debug=debug)
+    serial_batched(setup_recipe, port, send_individually=False, verbose=verbose, debug=debug)
 
     print_verbose(
-        f"[INFO] Waveform acquisition setup complete. Time elapsed: {time.time() - _start_t:.2f} s",
+        f"[INFO] Setup of buffer and trigger for waveform acquisition complete. Time elapsed: {time.time() - _start_t:.2f} s",
         color="purple",
         verbose=verbose,
     )
@@ -747,18 +783,26 @@ def setup_waveform_acquisition(port: str, num_points: int = 60, verbose: bool = 
     return True
 
 
-def acq_read(port: str, verbose: bool = True, debug: bool = DEBUG):
+def acq_read(port: str, persistent=False, max_attempts=5, verbose: bool = True, debug: bool = DEBUG):
 
-    resp = query_and_check(":read?", port, verbose=verbose, debug=debug)
+    for _ in range(max_attempts):
+        resp = query_and_check(":READ?", port, verbose=verbose, debug=debug)
 
-    if resp is None:
-        print_verbose(
-            "[WARNING] Received empty response to :READ? Returning None.",
-            color="red",
-            verbose=verbose,
-        )
-        return None
+        if resp == "":
+            print_verbose(
+                "[WARNING] Received empty response to :READ? Returning None.",
+                color="red",
+                verbose=verbose,
+            )
 
+        if persistent and resp is None:
+            continue
+        else:
+            return resp
+
+    print_verbose(
+        f"[ERROR] Failed to get valid response after {max_attempts} attempts. Returning None.", color="red", bold=True
+    )
     return resp
 
 
@@ -774,13 +818,25 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
         timestamp=True,
         color="purple",
     )
+    print_verbose(
+        "[INFO] Clear Buffer, Prepare Buffer for acquisition, Start acquisition, Poll for completion, Download data from Buffer...",
+        verbose=verbose,
+        timestamp=True,
+        color="purple",
+    )
 
     _start_total_time = time.time()
 
     _start_acq_time = time.time()
 
     # Arm acquisition
-    query_and_check(":TRAC:CLE;:TRAC:FEED:CONT NEXT;:INIT", port, verbose=verbose, debug=debug)
+    query_and_check(":TRAC:CLE;:TRAC:FEED:CONT NEXT", port, verbose=verbose, debug=debug)
+    query_and_check(
+        ":INIT", port, verbose=verbose, debug=debug, check_errors=False
+    )  # send :INIT by itself. INIT will hang the instrument, and check_inst_errors will not be able to communicate with the instrument until acquisition is complete. So we will wait for acquisition to complete with wait_operation_complete
+
+    wait_operation_complete(port, poll_interval=0.1, timeout=5.0, verbose=verbose, debug=debug)
+
     # notethat `:TRAC:FEED:CONT NEXT` enables the buffer and needs to be sent right before acquisition starts. After running `:INIT`, the buffer will change to back to `:TRAC:FEED:CONT NEVER`, and needs to be re-enabled before the next acquisition . If you dont do this, no new data will be stored in the buffer and subsequent queries to `:TRAC:DATA?` will return the same data until you re-enable the buffer with `:TRAC:FEED:CONT NEXT`.
 
     # resp = "0"
@@ -814,24 +870,10 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
 
     # Read all buffered readings and timestamps in one transfer
 
-    while True:
-        print_verbose(
-            f"[INFO] Waiting for acquisition to complete... time elapsed: {time.time() - _start_acq_time:.2f}s",
-            color="purple",
-            verbose=verbose,
-        )
-
-        # resp = query_and_check(":TRAC:POIN:ACT?", port, verbose=True)
-        # print(f"[DEBUG] : Current points in buffer: {resp}, {type(resp) = }")
-        opc_resp = query_and_check("*OPC?", port, verbose=debug, debug=debug)
-        # print_verbose(f"[DEBUG] : *OPC? response: {opc_resp}", verbose=True)
-        if opc_resp is not None:
-            break
-
-        time.sleep(poll_interval)
+    wait_operation_complete(port, poll_interval=0.1, timeout=5.0, verbose=verbose, debug=debug)
 
     print_verbose(
-        f"[INFO] Acuisition COMPLETED. Start Download data... time elapsed: {time.time() - _start_acq_time:.2f}s",
+        f"[INFO] Acquisition COMPLETED. Start Download data... time elapsed: {time.time() - _start_acq_time:.2f}s",
         color="purple",
         verbose=verbose,
     )
@@ -881,5 +923,5 @@ if __name__ == "__main__":
         if dev["is_keithley"]:
             print_keithley_properties(dev)
             serial_query(":CONF?", dev["port"], verbose=True, debug=DEBUG)
-            read_res = serial_query(":READ?", dev["port"], verbose=True, debug=DEBUG)
+            read_res = acq_read(dev["port"], verbose=True, debug=DEBUG)
             print(f"[RESULT] Raw data length: {read_res.count(',') + 1} data points")  # type: ignore
