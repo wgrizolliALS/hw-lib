@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "standalone_hw"
 version = "0.1.0"
 description = "Standalone library for hardware acquisition (LabJack/Keithley)"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "labjack-ljm",
     "ophyd",
@@ -22,6 +22,11 @@ dependencies = [
     "ipython",
     "ipykernel",
     "jupyter>=1.1.1",
+    "jupyterlab>=4.5.6",
+    "notebook>=7.5.5",
+    "jupyter-client>=8.8.0",
+    "pip>=26.1",
+    "pyside6>=6.11.0",
 ]
 
 [tool.setuptools]
