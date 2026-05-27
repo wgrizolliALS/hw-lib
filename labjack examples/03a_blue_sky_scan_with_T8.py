@@ -20,24 +20,34 @@ Dependencies:
 - ophyd_local_labjack: Custom LabJack integration module
 """
 
+
+# %%
+
+import matplotlib
+
+matplotlib.use("qtagg")
 import matplotlib.pyplot as plt
+
+# %! matplotlib qt
+
+# %%
 from bluesky import RunEngine
 from bluesky.plans import count, scan  # type: ignore  # noqa: F401
 from bluesky.callbacks.best_effort import BestEffortCallback
 from ophyd.sim import motor  # type: ignore
 
-from ophyd_labjack_t8 import LabJackT8
+from ophyd_labjack_t8 import LabJackT8Ophyd
 
 
-# Initialize Hardware
+# %% Initialize Hardware
 print("[INFO] Initializing LabJack T8...")
-t8 = LabJackT8(name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=1000.0, verbose=True)
-# t8 = LabJackT8(name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=10.0, verbose=True)
+t8 = LabJackT8Ophyd(name="t8", active_AI_channels=[0, 1], acq_time=1.0, sample_rate=1000.0, verbose=True)
+# t8 = LabJackT8Ophyd(name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=10.0, verbose=True)
 
 print("[INFO] LabJack T8 initialized.")
 print("[INFO] info:", t8.handle_info)
 
-# Initialize Bluesky
+# %% Initialize Bluesky
 print("[INFO] Initializing RunEngine and BestEffortCallback...")
 RE = RunEngine({})
 print("[INFO] Bluesky RunEngine STARTED")
@@ -47,14 +57,16 @@ RE.subscribe(BestEffortCallback())
 # Link the internal saver
 print("[INFO] Subscribing LabJack T8 CSV saver to RunEngine...")
 RE.subscribe(t8.csv_saver)
-
+# %%
 plt.ion()
 try:
     # High-level command
     print("[INFO] Starting Bluesky Scan with LabJack T8...")
-    RE(scan([t8], motor, -5, 5, 5))  # type: ignore
+    RE(scan([t8], motor, -5, 5, 3))  # type: ignore
     # RE(count([t8]))  # type: ignore
 
     plt.show(block=True)
 finally:
     t8.close()
+
+# %%

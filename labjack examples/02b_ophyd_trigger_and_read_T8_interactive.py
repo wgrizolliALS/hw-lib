@@ -5,16 +5,16 @@ import time
 import matplotlib
 
 # --- THE DETECTOR CLASS ---
-from labjack_t8_ophyd import LabJackT8
+from ophyd_labjack_t8 import LabJackT8Ophyd
 
 
 # %%
 
 print("[INFO] Starting Detector Test with Ophyd...")
-# det = LabJackT8(name="test_lj", channels=[0, 1], act_time=1.0, sample_rate=100, verbose=True)
+# det = LabJackT8Ophyd(name="test_lj", channels=[0, 1], act_time=1.0, sample_rate=100, verbose=True)
 
 
-det = LabJackT8(
+det = LabJackT8Ophyd(
     name="test_lj",
     channels=[0, 1],
     act_time=1.0,
@@ -24,7 +24,7 @@ det = LabJackT8(
     verbose=True,
 )
 
-print("[INFO] ophyd LabJackT8 instance created with channels: ", det.active_channels)
+print("[INFO] ophyd LabJackT8Ophyd instance created with channels: ", det.active_channels)
 
 # %%
 

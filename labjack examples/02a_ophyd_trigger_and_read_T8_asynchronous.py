@@ -16,7 +16,7 @@ from datetime import datetime
 import time
 
 # --- THE DETECTOR CLASS ---
-import labjack_t8_ophyd as ljt8o
+import ophyd_labjack_t8 as ljt8o
 
 
 def datenow_str():
@@ -27,8 +27,8 @@ def datenow_str():
 # --- THE STANDALONE TEST ---
 def main():
     print(f"[INFO] {datenow_str()}: Starting Detector Test with Ophyd...")
-    det = ljt8o.LabJackT8(name="test_lj", channels=[0, 1])
-    print(f"[INFO] {datenow_str()}: ophyd LabJackT8 instance created with channels: ", det.active_channels)
+    det = ljt8o.LabJackT8Ophyd(name="test_lj", channels=[0, 1])
+    print(f"[INFO] {datenow_str()}: ophyd LabJackT8Ophyd instance created with channels: ", det.active_channels)
 
     for i in range(3):
         print(f"\n[INFO] {datenow_str()}: Point {i + 1}:")

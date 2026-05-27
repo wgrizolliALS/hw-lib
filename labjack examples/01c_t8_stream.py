@@ -1,14 +1,22 @@
 # file: t8_system.py
 
 
+from datetime import datetime
+import csv
+import os
+
 from labjack import ljm
 import time
 import numpy as np
-from typing import Dict, List, Callable
+from typing import Dict, List
 
 # ============================================
 # CONFIGURATION (at __main__ level)
 # ============================================
+
+
+def _time_now_str():
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
 
 
 class SystemConfig:
@@ -63,14 +71,14 @@ class T8Hardware:
     def __init__(self, connection_type="USB", device_identifier="ANY"):
         """
         Initialize T8 connection
-        
+
         Args:
             connection_type: "USB" or "ETHERNET"
             device_identifier: For USB: "ANY" or serial number
                              For Ethernet: IP address string
         """
         self.connection_type = connection_type
-        
+
         if connection_type.upper() == "USB":
             # USB connection
             if device_identifier == "ANY":
@@ -84,7 +92,7 @@ class T8Hardware:
             self.handle = ljm.open(ljm.constants.dtT8, ljm.constants.ctETHERNET, device_identifier)
         else:
             raise ValueError(f"Unsupported connection type: {connection_type}. Use 'USB' or 'ETHERNET'")
-        
+
         # Print connection info
         info = ljm.getHandleInfo(self.handle)
         print(f"Connected to T8 via {connection_type}:")
@@ -97,14 +105,17 @@ class T8Hardware:
 
     def start_streaming(self, channels: List[str], rate: int):
         """Start streaming specified channels"""
-        addresses, types = ljm.nameToAddress(channels)
+        addresses = []
+        for channel in channels:
+            addr, _ = ljm.nameToAddress(channel)
+            addresses.append(addr)
+
         ljm.eStreamStart(
             self.handle,
             scansPerRead=256,
             scanRate=rate,
             numAddresses=len(addresses),
             aScanList=addresses,
-            dataTypes=types,
         )
 
     def stop_streaming(self):
@@ -121,11 +132,22 @@ class T8Hardware:
 
     def setup_dio_clock(self, channel: str, frequency: int, duty_cycle: int = 50):
         """Setup DIO as hardware PWM clock"""
-        ljm.eWriteName(self.handle, f"{channel}_EF_ENABLE", 0)
-        ljm.eWriteName(self.handle, f"{channel}_EF_INDEX", 0)
-        ljm.eWriteName(self.handle, f"{channel}_EF_CONFIG_A", frequency)
-        ljm.eWriteName(self.handle, f"{channel}_EF_CONFIG_B", duty_cycle)
-        ljm.eWriteName(self.handle, f"{channel}_EF_ENABLE", 1)
+        try:
+            # First, ensure the pin is properly reset
+            ljm.eWriteName(self.handle, f"{channel}_EF_ENABLE", 0)
+            time.sleep(0.01)  # Small delay to ensure disable takes effect
+
+            # Configure as PWM output (EF Index 0)
+            ljm.eWriteName(self.handle, f"{channel}_EF_INDEX", 0)
+            ljm.eWriteName(self.handle, f"{channel}_EF_CONFIG_A", frequency)
+            ljm.eWriteName(self.handle, f"{channel}_EF_CONFIG_B", duty_cycle)
+            ljm.eWriteName(self.handle, f"{channel}_EF_ENABLE", 1)
+
+        except Exception as e:
+            print(f"      WARNING: Failed to setup {channel} as clock: {e}")
+            print(f"      Continuing without {channel} clock output...")
+            return False
+        return True
 
     def disable_dio_clock(self, channel: str):
         """Disable DIO clock"""
@@ -150,7 +172,7 @@ class T8ControlSystem:
 
     def __init__(self, config: SystemConfig):
         self.config = config
-        
+
         # Initialize hardware with appropriate connection type
         if config.CONNECTION_TYPE.upper() == "USB":
             self.hw = T8Hardware("USB", config.USB_DEVICE)
@@ -162,31 +184,43 @@ class T8ControlSystem:
         # Store latest ADC readings
         self.adc_readings: Dict[str, float] = {}
 
+        # Store latest DAC outputs
+        self.dac_outputs: Dict[str, float] = {}
+
         # DIO toggle state for toggle mode
         self.dio_states: Dict[str, int] = {}
         self.dio_last_toggle: Dict[str, float] = {}
+
+        # CSV logging
+        self.csv_file = None
+        self.csv_writer = None
+        self.csv_filename = None
 
     def setup(self):
         """Initialize system"""
 
         print("=" * 50)
-        print("Initializing T8 Control System")
+        print(f"[{_time_now_str()}] [INFO] Initializing T8 Control System")
         print("=" * 50)
 
         # Setup ADC streaming
-        print(f"\n[ADC] Streaming: {self.config.ADC_CHANNELS}")
+        print(f"\n[{_time_now_str()}] [ADC] Streaming: {self.config.ADC_CHANNELS}")
         print(f"      Rate: {self.config.ADC_STREAM_RATE} Hz")
         self.hw.start_streaming(self.config.ADC_CHANNELS, self.config.ADC_STREAM_RATE)
 
         # Setup DIO
-        print("\n[DIO] Configuration:")
+        print(f"\n[{_time_now_str()}] [DIO] Configuration:")
         for dio_name, dio_config in self.config.DIO_CONFIG.items():
             if not dio_config["enabled"]:
                 continue
 
             if dio_config["mode"] == "clock":
-                print(f"      {dio_name}: Clock @ {dio_config['frequency']} Hz")
-                self.hw.setup_dio_clock(dio_name, dio_config["frequency"])
+                print(f"      {dio_name}: Clock @ {dio_config['frequency']} Hz", end="")
+                success = self.hw.setup_dio_clock(dio_name, dio_config["frequency"])
+                if success:
+                    print(" ✓")
+                else:
+                    print(" ✗")
 
             elif dio_config["mode"] == "toggle":
                 print(f"      {dio_name}: Toggle @ {dio_config['frequency']} Hz")
@@ -194,7 +228,7 @@ class T8ControlSystem:
                 self.dio_last_toggle[dio_name] = time.perf_counter()
 
         # Setup DAC
-        print("\n[DAC] Configuration:")
+        print(f"\n[{_time_now_str()}] [DAC] Configuration:")
         for dac_name, dac_config in self.config.DAC_CONFIG.items():
             if not dac_config["enabled"]:
                 continue
@@ -204,6 +238,11 @@ class T8ControlSystem:
                 dac_config["enabled"] = False
             else:
                 print(f"      {dac_name}: Enabled @ {dac_config['control_rate']} Hz")
+                # Initialize DAC output tracking
+                self.dac_outputs[dac_name] = 2.5  # Default safe value
+
+        # Setup CSV logging
+        self._setup_csv_logging()
 
         print("\n" + "=" * 50 + "\n")
 
@@ -214,6 +253,71 @@ class T8ControlSystem:
             samples = stream_data[0][i]
             value = np.mean(samples)  # Average streamed samples
             self.adc_readings[channel_name] = value
+
+    def _setup_csv_logging(self):
+        """Setup CSV file for data logging"""
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.csv_filename = f"t8_data_{timestamp}.csv"
+
+        print(f"[{_time_now_str()}] [CSV] Logging to: {self.csv_filename}")
+
+        # Open CSV file
+        self.csv_file = open(self.csv_filename, "w", newline="", encoding="utf-8")
+        self.csv_writer = csv.writer(self.csv_file)
+
+        # Create header row
+        headers = ["timestamp", "iteration"]
+
+        # Add ADC columns
+        for channel in self.config.ADC_CHANNELS:
+            headers.append(f"{channel}_V")
+
+        # Add DAC columns
+        for dac_name, dac_config in self.config.DAC_CONFIG.items():
+            if dac_config["enabled"]:
+                headers.append(f"{dac_name}_V")
+
+        # Add DIO columns
+        for dio_name, dio_config in self.config.DIO_CONFIG.items():
+            if dio_config["enabled"]:
+                headers.append(f"{dio_name}_state")
+
+        # Write header
+        self.csv_writer.writerow(headers)
+        self.csv_file.flush()
+
+    def _log_data_to_csv(self, iteration):
+        """Log current data to CSV"""
+        if not self.csv_writer:
+            return
+
+        # Create data row
+        row = [datetime.now().isoformat(), iteration]
+
+        # Add ADC data
+        for channel in self.config.ADC_CHANNELS:
+            row.append(self.adc_readings.get(channel, 0.0))
+
+        # Add DAC data
+        for dac_name, dac_config in self.config.DAC_CONFIG.items():
+            if dac_config["enabled"]:
+                row.append(self.dac_outputs.get(dac_name, 0.0))
+
+        # Add DIO data
+        for dio_name, dio_config in self.config.DIO_CONFIG.items():
+            if dio_config["enabled"]:
+                if dio_config["mode"] == "toggle":
+                    row.append(self.dio_states.get(dio_name, 0))
+                else:  # clock mode
+                    row.append(1)  # Always 1 for active clock
+
+        # Write row
+        self.csv_writer.writerow(row)
+
+        # Flush every 10 iterations to ensure data is saved
+        if iteration % 10 == 0:
+            self.csv_file.flush()
 
     def process_dio_toggles(self):
         """Handle DIO toggle mode (separate from clock mode)"""
@@ -249,6 +353,9 @@ class T8ControlSystem:
                 # Write to DAC
                 self.hw.write_analog(dac_name, dac_voltage)
 
+                # Store for logging
+                self.dac_outputs[dac_name] = dac_voltage
+
             except Exception as e:
                 print(f"[ERROR] {dac_name} control function failed: {e}")
 
@@ -266,7 +373,7 @@ class T8ControlSystem:
                 last_control_times[dac_name] = time.perf_counter()
 
         try:
-            print("Running control loop...\n")
+            print(f"[{_time_now_str()}] Running control loop...\n")
             start_time = time.perf_counter()
 
             while True:
@@ -290,20 +397,26 @@ class T8ControlSystem:
                         self.execute_dac_control()
                         last_control_times[dac_name] = current_time
 
+                # ========== LOG DATA TO CSV ==========
+                self._log_data_to_csv(iteration)
+
                 # ========== STATUS ==========
-                if iteration % 100 == 0:
+                if iteration % 10 == 0:
                     status = "  ".join([f"{k}={v:.4f}V" for k, v in self.adc_readings.items()])
-                    print(f"[{iteration:5d}] {status}")
+                    print(f"[{iteration:5d}] {status}", flush=True)
+                else:
+                    print(".", end="", flush=True)
 
         except KeyboardInterrupt:
-            print("\n\nUser interrupt")
+            print(f"\n\n[{_time_now_str()}] [Warning] User interrupt")
 
         finally:
+            print(f"\n\n[{_time_now_str()}] [SUCCESS] Stream Complete. Shutting down system...")
             self.shutdown()
 
     def shutdown(self):
         """Clean shutdown"""
-        print("\nShutting down...")
+        print(f"\n\n[{_time_now_str()}] [INFO] Shutting down...")
 
         # Stop DACs
         for dac_name in self.config.DAC_CONFIG:
@@ -318,7 +431,12 @@ class T8ControlSystem:
         self.hw.stop_streaming()
         self.hw.close()
 
-        print("Done")
+        # Close CSV file
+        if self.csv_file:
+            self.csv_file.close()
+            print(f"[{_time_now_str()}] [INFO] CSV data saved to: {self.csv_filename}")
+
+        print(f"[{_time_now_str()}] [INFO] Done")
 
 
 # ============================================
@@ -382,12 +500,12 @@ if __name__ == "__main__":
     # ========== CONNECTION CONFIGURATION ==========
     # Choose connection type: "USB" or "ETHERNET"
     config.CONNECTION_TYPE = "USB"  # Change to "ETHERNET" for network connection
-    
+
     # For USB: "ANY" for first found device, or specific serial number
     config.USB_DEVICE = "ANY"  # e.g., "440010117" for specific device
-    
+
     # For Ethernet: IP address (only used if CONNECTION_TYPE is "ETHERNET")
-    config.IP_ADDRESS = "192.168.1.100"
+    # config.IP_ADDRESS = "192.168.1.100"
 
     # Define which ADCs to read
     config.ADC_CHANNELS = ["AIN0", "AIN1"]
@@ -402,7 +520,7 @@ if __name__ == "__main__":
     config.DAC_CONFIG["DAC1"]["enabled"] = False
 
     # Configure DIO0 as 1 kHz clock
-    config.DIO_CONFIG["DIO0"]["enabled"] = True
+    config.DIO_CONFIG["DIO0"]["enabled"] = False
     config.DIO_CONFIG["DIO0"]["mode"] = "clock"
     config.DIO_CONFIG["DIO0"]["frequency"] = 1000  # Hz
 
@@ -416,6 +534,6 @@ if __name__ == "__main__":
     system.setup()
 
     try:
-        system.run(duration_s=30)  # Run for 30 seconds (or None for infinite)
+        system.run(duration_s=5)  # Run for XX seconds (or None for infinite)
     except Exception as e:
         print(f"Fatal error: {e}")

@@ -14,11 +14,9 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
-import signal
-import sys
 
-import labjack_t8_ophyd as lt8o
-from labjack_t8_ophyd import LabJackT8
+import ophyd_labjack_t8 as lt8o
+from ophyd_labjack_t8 import LabJackT8Ophyd
 
 
 def datenow_str():
@@ -27,17 +25,6 @@ def datenow_str():
 
 def print_info(message):
     print(f"[INFO {datenow_str()}] {message}")
-
-
-# Global flag for graceful shutdown
-stop_acquisition = False
-
-
-def signal_handler(signum, frame):
-    """Handle Ctrl+C signal properly in PowerShell."""
-    global stop_acquisition
-    print_info("\n🛑 Ctrl+C detected - stopping acquisition gracefully...")
-    stop_acquisition = True
 
 
 class SimpleLabJackStreamer:
@@ -55,11 +42,7 @@ class SimpleLabJackStreamer:
 
         self.stride = max(1, int(actual_points_per_second / max_plot_rate))
 
-        print_info(f"Sample rate: {detector.sample_rate:.0f} Hz")
-        print_info(f"Acquisition time: {detector.acq_time}s ({points_per_acquisition} points each)")
-        print_info(f"Acquisition rate: {acquisitions_per_second:.1f} Hz")
-        print_info(f"Plot rate limit: {max_plot_rate} points/s")
-        print_info(f"Using stride: {self.stride} (plot every {self.stride} points)")
+        print_info(f"Streaming at {detector.sample_rate:.0f} Hz, showing {max_plot_rate} points/s")
 
         # Data storage
         self.plot_times = []
@@ -98,16 +81,12 @@ class SimpleLabJackStreamer:
         print_info("Plot ready!")
 
     def update_plot(self):
-        """Get new data and update plot with undersampling - WITH TIMING DIAGNOSTICS."""
-        start_time = time.time()
-
+        """Get new data and update plot."""
         try:
-            # Trigger and get data - MEASURE THIS
-            trigger_start = time.time()
+            # Get new data
             status = self.detector.trigger()
             while not status.done:
-                time.sleep(0.001)  # Small sleep to avoid busy waiting
-            trigger_time = time.time() - trigger_start
+                time.sleep(0.001)
 
             # Get waveforms and add to plot data immediately
             sample_rate = self.detector.sample_rate
@@ -173,20 +152,9 @@ class SimpleLabJackStreamer:
                             margin = (y_max - y_min) * 0.1 if y_max != y_min else 0.1
                             self.axes[i].set_ylim(y_min - margin, y_max + margin)
 
-            # Efficient plot refresh
-            self.fig.canvas.draw_idle()  # Use draw_idle() for better performance
+            # Refresh plot
+            self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
-
-            total_time = time.time() - start_time
-
-            # Print timing every 20 updates to debug slow performance
-            if hasattr(self, "update_count"):
-                self.update_count += 1
-            else:
-                self.update_count = 1
-
-            if self.update_count % 20 == 0:
-                print_info(f"Update #{self.update_count}: trigger={trigger_time:.3f}s, total={total_time:.3f}s")
 
         except Exception as e:
             print_info(f"Update error: {e}")
@@ -195,123 +163,84 @@ class SimpleLabJackStreamer:
         return True
 
 
-def main():
+def main(
+    name,
+    active_AI_channels,
+    sample_rate,  # Very low rate for fast acquisitions
+    acq_time,  # 10ms acquisitions = 1 point each, 100 Hz update rate
+    enable_waveforms,
+    verbose,
+    save_raw_to_csv,
+):
     """Main execution."""
-    global stop_acquisition
-
-    # Set up signal handler for Ctrl+C (works better with PowerShell)
-    signal.signal(signal.SIGINT, signal_handler)
-
     print_info("🚀 Starting Simple LabJack Streaming")
 
     try:
-        # Close any existing connections AND clean up streams
-        try:
-            import ljm
-
-            print_info("Cleaning up any existing LabJack connections and streams...")
-
-            # Try to connect briefly and stop any active streams
-            try:
-                handle = ljm.openS("T8", "USB", "ANY")
-                ljm.eStreamStop(handle)
-                ljm.close(handle)
-                print_info("Stopped existing stream")
-            except:
-                pass  # No existing stream to stop
-
-            ljm.closeAll()
-            time.sleep(0.5)  # Give it more time to clean up
-
-        except:
-            print_info("No existing connections to clean up")
+        # Clean up any existing connections
+        lt8o.close_all_labjacks()
+        time.sleep(0.2)
 
         # Initialize detector - MINIMAL settings for maximum speed
-        detector = LabJackT8(
-            name="simple_stream",
-            active_AI_channels=[0, 1],
-            sample_rate=100.0,  # Very low rate for fast acquisitions
-            acq_time=0.01,  # 10ms acquisitions = 1 point each, 100 Hz update rate
-            enable_waveforms=True,
-            verbose=False,
-            save_raw_to_csv=False,
+        detector = LabJackT8Ophyd(
+            name=name,
+            active_AI_channels=active_AI_channels,
+            sample_rate=sample_rate,
+            acq_time=acq_time,
+            enable_waveforms=enable_waveforms,
+            verbose=verbose,
+            save_raw_to_csv=save_raw_to_csv,
         )
 
         print_info("✅ LabJack initialized")
 
-        # Force stop any existing stream on this device before starting continuous mode
-        try:
-            detector.ljm_module.eStreamStop(detector.handle)
-            print_info("Stopped existing stream on device")
-            time.sleep(0.2)  # Give device time to reset
-        except Exception as e:
-            # Expected if no stream was running - that's OK
-            pass
-
-        # Start continuous streaming for MUCH better performance - no more start/stop overhead!
+        # Start continuous streaming
         detector.start_continuous_stream(buffer_size_seconds=1.0)
+
         # Create streamer
         streamer = SimpleLabJackStreamer(
             detector=detector,
-            plot_window_seconds=3.0,  # Show 3 seconds
-            max_plot_rate=200,  # Limit to 200 points/s
+            plot_window_seconds=3.0,
+            max_plot_rate=200,
         )
 
-        # Simple main loop - REAL TIME
-        print_info("🎬 Starting stream... Press Ctrl+C to stop")
+        # Main loop - run for 60 seconds then auto-stop
+        print_info("🎬 Starting stream... (will run for 60 seconds)")
+        start_time = time.time()
         acquisition_count = 0
 
-        while not stop_acquisition:
+        while time.time() - start_time < 60:
             success = streamer.update_plot()
             if not success:
                 break
 
             acquisition_count += 1
             if acquisition_count % 100 == 0:
-                # Show progress less frequently
-                avg_values = []
-                for ch_name in detector.channel_names:
-                    ch_attr = getattr(detector, ch_name)
-                    avg_val = ch_attr.get()
-                    avg_values.append(f"{ch_name}: {avg_val:.3f}V")
-                print_info(f"Acquisition #{acquisition_count} | {', '.join(avg_values)}")
-
-            # No sleep - run as fast as possible for real-time
-            # The LabJack acquisition itself provides the timing
-
-    except KeyboardInterrupt:
-        print_info("\n🛑 Acquisition stopped by user")
+                print_info(f"Acquisition #{acquisition_count} - running...")
 
     except Exception as e:
         print_info(f"Error: {e}")
 
     finally:
-        # Cleanup LabJack connection
+        # Cleanup
         try:
-            if "detector" in locals() and hasattr(detector, "handle") and detector.handle:
-                # Force stop any stream first
-                try:
-                    detector.ljm_module.eStreamStop(detector.handle)
-                except:
-                    pass  # May not have been running
-
-                # Stop continuous stream before closing
-                detector.stop_continuous_stream()
-                detector.close()
-                print_info("🔌 Connection closed")
-        except:
-            # Final fallback
-            try:
-                lt8o.close_all_labjacks()
-            except:
-                pass
-        print_info("🔌 LabJack cleanup completed")
+            detector.stop_continuous_stream()
+            detector.close()
+            print_info("🔌 LabJack closed")
+        except Exception as e:
+            print_info(f"Cleanup fallback: {e}")
+            lt8o.close_all_labjacks()
+        print_info("✅ Cleanup completed")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        # Always try to keep plot open, regardless of how we exit
-        print_info("📊 Keeping plot open - close window manually when done")
-        plt.show(block=True)
+    main(
+        name="simple_stream",
+        active_AI_channels=[0, 1],
+        sample_rate=100.0,  # Very low rate for fast acquisitions
+        acq_time=0.01,  # 10ms acquisitions = 1 point each, 100 Hz update rate
+        enable_waveforms=True,
+        verbose=False,
+        save_raw_to_csv=False,
+    )
+    print_info("📊 Plot stays open - close window when done")
+    plt.show(block=True)

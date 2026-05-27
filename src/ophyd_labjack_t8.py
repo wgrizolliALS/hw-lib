@@ -45,7 +45,7 @@ def _channel_name(ch_n, prefix="AIN"):
     return [f"{prefix}{n}" for n in ch_n]
 
 
-class LabJackT8(Device):
+class LabJackT8Ophyd(Device):
     """
     A self-contained Ophyd device for the LabJack T8.
 
@@ -107,11 +107,11 @@ class LabJackT8(Device):
     --------
     - Set per-channel ranges (legacy style):
 
-        LabJackT8('t8', AI_channels=[0,1], ranges={0: 10, 'AIN1': 2.44})
+        LabJackT8Ophyd('t8', AI_channels=[0,1], ranges={0: 10, 'AIN1': 2.44})
 
     - Generic register writes (recommended for arbitrary registers):
 
-        LabJackT8('t8', writes={'AIN0_RANGE': 10, 'DIO0_EF_CLOCK0_ENABLE': 1})
+        LabJackT8Ophyd('t8', writes={'AIN0_RANGE': 10, 'DIO0_EF_CLOCK0_ENABLE': 1})
     """
 
     def __init__(
@@ -287,18 +287,37 @@ class LabJackT8(Device):
         scan_rate = self.sample_rate
         scans_per_read = int(scan_rate * self.acq_time)
 
+        # For continuous streaming performance, use larger buffer or infinite streaming
+        if hasattr(self, "_continuous_mode") and self._continuous_mode:
+            # Use infinite streaming (0) for continuous mode - much faster
+            scans_per_read = 0
+        elif scans_per_read < 100:
+            # Use minimum buffer size of 100 for better performance
+            scans_per_read = 100
+
         def _worker():
             if self.verbose_stream:
                 print(f"[INFO] {datetime.now()}: Acquisition STARTED.")
             try:
-                aAddresses = self.ljm_module.namesToAddresses(len(self.AI_channels_name), self.AI_channels_name)[0]
-                actual_rate = self.ljm_module.eStreamStart(
-                    self.handle, scans_per_read, len(aAddresses), aAddresses, scan_rate
-                )
-                self.last_scan_actual_rate = actual_rate
-                ret = self.ljm_module.eStreamRead(self.handle)
-                raw_data = ret[0]
-                self.ljm_module.eStreamStop(self.handle)
+                # Check if we're in continuous streaming mode
+                if hasattr(self, "_continuous_mode") and self._continuous_mode:
+                    # Just read from existing stream buffer - DON'T start/stop
+                    if hasattr(self, "_stream_active") and self._stream_active:
+                        ret = self.ljm_module.eStreamRead(self.handle)
+                        raw_data = ret[0]
+                        actual_rate = self.last_scan_actual_rate
+                    else:
+                        raise RuntimeError("Continuous stream not started. Call start_continuous_stream() first.")
+                else:
+                    # Original single-shot mode - start, read, stop
+                    aAddresses = self.ljm_module.namesToAddresses(len(self.AI_channels_name), self.AI_channels_name)[0]
+                    actual_rate = self.ljm_module.eStreamStart(
+                        self.handle, scans_per_read, len(aAddresses), aAddresses, scan_rate
+                    )
+                    self.last_scan_actual_rate = actual_rate
+                    ret = self.ljm_module.eStreamRead(self.handle)
+                    raw_data = ret[0]
+                    self.ljm_module.eStreamStop(self.handle)
 
                 num_channels = len(self.AI_channels_name)
                 reshaped = np.array(raw_data).reshape(-1, num_channels)
@@ -385,9 +404,9 @@ class LabJackT8(Device):
         # it's a transient view of the last acquired block.
         if self._raw_block_for_csv is not None:
             key = f"{self.name}_raw_block"
-            # Provide a minimal read dict with a `value` entry to match legacy
-            # code that indexes `readings["..._raw_block"]["value"]`.
-            res[key] = {"value": self._raw_block_for_csv}  # type: ignore
+            # Provide a minimal read dict with both 'value' and 'timestamp' entries
+            # as required by Bluesky's data model
+            res[key] = {"value": self._raw_block_for_csv, "timestamp": time.time()}
         return res
 
     def describe(self):
@@ -413,16 +432,25 @@ class LabJackT8(Device):
             for i, ch in enumerate(self.AI_channels_name):
                 wf_key = f"{self.name}_{ch.lower()}_waveform"
                 res[wf_key] = {  # type: ignore
-                    "source": f"LabJackT8 {ch} waveform",
+                    "source": f"LabJackT8Ophyd {ch} waveform",
                     "dtype": "number",
                     "shape": (scans_per_read,),
                 }
             # Only one time vector for all channels
             wf_time_key = f"{self.name}_waveform_time"
             res[wf_time_key] = {  # type: ignore
-                "source": "LabJackT8 waveform time",
+                "source": "LabJackT8Ophyd waveform time",
                 "dtype": "number",
                 "shape": (scans_per_read,),
+            }
+
+        # Add raw block description if CSV saving is enabled
+        if self.save_raw_to_csv:
+            raw_block_key = f"{self.name}_raw_block"
+            res[raw_block_key] = {  # type: ignore
+                "source": "LabJackT8Ophyd raw acquisition block",
+                "dtype": "number",
+                "shape": (scans_per_read, len(self.AI_channels_name) + 1),  # +1 for time column
             }
         return res
 
@@ -497,12 +525,79 @@ class LabJackT8(Device):
                 print(f"\n[CSV] Saved {len(self._scan_results)} rows to {self.csv_fname}")
                 self._csv_file = None
 
+    def start_continuous_stream(self, buffer_size_seconds=2.0):
+        """
+        Start continuous streaming mode for high-performance real-time acquisition.
+
+        In this mode, the LabJack stream runs continuously and trigger() calls
+        just read from the buffer instead of starting/stopping the stream.
+
+        Parameters
+        ----------
+        buffer_size_seconds : float
+            Size of the internal buffer in seconds of data.
+        """
+        if hasattr(self, "_stream_active") and self._stream_active:
+            print("[INFO] Continuous stream already active")
+            return
+
+        print("[INFO] Starting continuous streaming mode...")
+
+        # Set continuous mode flag
+        self._continuous_mode = True
+
+        # Calculate buffer size in scans
+        scan_rate = self.sample_rate
+        buffer_scans = int(scan_rate * buffer_size_seconds)
+
+        # Start the continuous stream
+        try:
+            aAddresses = self.ljm_module.namesToAddresses(len(self.AI_channels_name), self.AI_channels_name)[0]
+            actual_rate = self.ljm_module.eStreamStart(
+                self.handle, buffer_scans, len(aAddresses), aAddresses, scan_rate
+            )
+            self.last_scan_actual_rate = actual_rate
+            self._stream_active = True
+            print(f"[INFO] Continuous stream started at {actual_rate:.1f} Hz")
+
+        except Exception as e:
+            print(f"[STREAM ERROR] Failed to start continuous stream: {e}")
+            self._continuous_mode = False
+            self._stream_active = False
+            raise
+
+    def stop_continuous_stream(self):
+        """
+        Stop continuous streaming mode and return to single-shot acquisitions.
+        """
+        if not hasattr(self, "_stream_active") or not self._stream_active:
+            print("[INFO] No continuous stream to stop")
+            return
+
+        print("[INFO] Stopping continuous streaming mode...")
+
+        try:
+            self.ljm_module.eStreamStop(self.handle)
+            self._stream_active = False
+            self._continuous_mode = False
+            print("[INFO] Continuous stream stopped")
+
+        except Exception as e:
+            print(f"[STREAM ERROR] Failed to stop continuous stream: {e}")
+            # Force reset flags anyway
+            self._stream_active = False
+            self._continuous_mode = False
+
     def close(self):
         """
         Close the LJM connection to the LabJack device.
 
         Safe to call even if the device was never successfully connected.
         """
+        # Stop any active continuous stream first
+        if hasattr(self, "_stream_active") and self._stream_active:
+            self.stop_continuous_stream()
+
         if hasattr(self, "handle") and self.handle:
             self.ljm_module.close(self.handle)
             print("[INFO] LabJack connection closed.")

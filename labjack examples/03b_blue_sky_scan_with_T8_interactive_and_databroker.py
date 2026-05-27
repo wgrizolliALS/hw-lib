@@ -37,7 +37,7 @@ from bluesky.plans import count, scan  # type: ignore  # noqa: F401
 from bluesky.callbacks.best_effort import BestEffortCallback
 from ophyd.sim import motor  # type: ignore
 
-from ophyd_labjack_t8 import LabJackT8
+from ophyd_labjack_t8 import LabJackT8Ophyd
 
 from databroker import Broker  # noqa: F401
 
@@ -72,7 +72,7 @@ plt.rcParams.update(params)
 
 print("[INFO] Initializing LabJack T8...")
 try:
-    t8 = LabJackT8(name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=1000.0, verbose=True)
+    t8 = LabJackT8Ophyd(name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=1000.0, verbose=True)
     print("[INFO] LabJack T8 initialized.")
     print("[INFO] info:", t8.handle_info)
 except Exception as e:

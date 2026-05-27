@@ -41,8 +41,8 @@ from bluesky.plans import count, scan  # type: ignore  # noqa: F401
 from bluesky.callbacks.best_effort import BestEffortCallback
 from ophyd.sim import motor  # type: ignore
 
-# %% Custom LabJackT8 import
-from ophyd_labjack_t8 import LabJackT8
+# %% Custom LabJackT8Ophyd import
+from ophyd_labjack_t8 import LabJackT8Ophyd
 
 # %% Databroker and Tiled imports
 from tiled.server import SimpleTiledServer
@@ -80,7 +80,7 @@ plt.rcParams.update(params)
 
 print("[SETUP HW] Initializing LabJack T8...")
 try:
-    t8 = LabJackT8(
+    t8 = LabJackT8Ophyd(
         name="t8", channels=[0, 1, 2, 4], act_time=1.0, sample_rate=1000.0, verbose=True, enable_waveforms=True
     )
     print("[SETUP HW] LabJack T8 initialized.")
