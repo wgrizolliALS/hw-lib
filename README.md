@@ -1,59 +1,64 @@
-# Standalone-HW-Scripts
+# hw-lib
 
-A local, standalone system for acquiring and recording waveform data from multiple hardware instruments.
+Standalone hardware acquisition library for LabJack T8 and Keithley instruments. No framework dependencies — works without Ophyd or Bluesky.
 
-## Overview
-
-This project provides direct, local data acquisition and recording capabilities for hardware instruments, complementing EPICS by handling waveform data storage that EPICS cannot manage directly. It does not require network connectivity or external services.
-# Standalone-HW-Scripts
-
-A local, standalone system for acquiring and recording waveform data from multiple hardware instruments.
-
-## Overview
-
-This project provides direct, local data acquisition and recording capabilities for hardware instruments, complementing EPICS by handling waveform data storage that EPICS cannot manage directly. It does not require network connectivity or external services.
+For Ophyd/Bluesky integration see the companion repository [hw-lib-ophyd](https://github.com/wgrizolliALS/hw-lib-ophyd).
 
 ## Supported Hardware
 
-- **LabJack T8** — Multi-channel analog/digital I/O
-- **Keithley** — Precision measurement instruments
-
-## Key Features
-
-- Direct local hardware control using Ophyd
-- Real-time data acquisition and streaming
-- Waveform recording and storage
-- Data visualization with Plotly
-- Multi-instrument support
+- **LabJack T8** — Multi-channel analog input, DAC output, DIO, streaming
+- **Keithley** — Precision measurement instruments (serial/SCPI)
 
 ## Project Structure
 
-```
-Standalone-HW-Scripts/
+```text
+hw-lib/
 ├── src/
-│   ├── ophyd_local_labjack.py      # LabJack device interface
-│   └── ophyd_local_keithley.py     # Keithley device interface
-├── labjack_examples/               # Example scripts for LabJack
-└── keithley_examples/              # Example scripts for Keithley
+│   └── keithley_utils.py           # Keithley serial/SCPI utilities
+├── labjack examples/
+│   ├── 00a_check_installation.py   # Verify LJM installation
+│   ├── 00b_detected_connected_hw.py
+│   ├── 00c_close_all_connected_labjacks.py
+│   ├── 01a_T8_acquire_standalone.ipynb/.py
+│   ├── 01b_T8_acquire_standalone_continuous.ipynb
+│   └── 01c_t8_stream.py
+└── keithley examples/
+    ├── 00a_check_installation.py
+    ├── 00b_detect_connected_kley.py
+    ├── 00b_keithley_query_terminal.py
+    ├── 01a_keithley_acq_waveform_inter_terminal.ipynb/.py
+    └── 01b_keithley_acq_waveform_check_jitter.py
 ```
 
-## Getting Started
+## Requirements
 
-### Requirements
+- Python >= 3.12
+- [LabJack LJM library](https://support.labjack.com/docs/ljm-library-overview) installed on the host machine
 
+All Python dependencies are managed via `pyproject.toml`.
 
-All other dependencies (Ophyd, Bluesky, LabJack-LJM, etc.) are managed automatically via `pyproject.toml`.
+## Installation
 
-### Installation
-
-To install the package in **editable mode** (recommended for development), run the following from the project root:
+Install in editable mode from the project root:
 
 ```bash
-pip install -e .
+# Core only (scripts and .py examples)
+uv pip install -e .
+
+# With Jupyter support (to run .ipynb notebooks, interactive plotting)
+uv pip install -e .[jupyter]
+
+# For development (nbstripout, pytest)
+uv pip install -e .[dev]
+
+# Full install
+uv pip install -e .[jupyter,dev]
 ```
 
-### Basic Usage
+### Activate nbstripout (recommended)
 
-See example scripts in:
-- `labjack_examples/` for LabJack data acquisition
-- `keithley_examples/` for Keithley measurements
+After installing the `dev` extra, run once inside the repo to strip notebook outputs before every commit:
+
+```bash
+nbstripout --install
+```

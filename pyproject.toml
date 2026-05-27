@@ -3,30 +3,34 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "standalone_hw"
+name = "hw-lib"
 version = "0.1.0"
-description = "Standalone library for hardware acquisition (LabJack/Keithley)"
+description = "Standalone hardware acquisition library for LabJack T8 and Keithley"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "labjack-ljm",
-    "ophyd",
     "numpy",
-    "scipy",
-    "plotly",
-    "nbformat",
     "pandas",
-    "pyserial",
+    "plotly",
     "matplotlib",
-    "bluesky",
-    "databroker",
+    "pyserial",
+]
+
+[project.optional-dependencies]
+jupyter = [
+    "scipy",
+    "pyside6>=6.11.0",
     "ipython",
     "ipykernel",
     "jupyter>=1.1.1",
     "jupyterlab>=4.5.6",
     "notebook>=7.5.5",
     "jupyter-client>=8.8.0",
-    "pip>=26.1",
-    "pyside6>=6.11.0",
+]
+
+dev = [
+    "nbstripout",
+    "pytest",
 ]
 
 [tool.setuptools]
