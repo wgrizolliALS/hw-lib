@@ -719,7 +719,7 @@ def setup_read_acquisition(port: str, points_for_stat: int = 1, verbose: bool = 
     print_verbose("[INFO] Setting up single-point acquisition...", color="purple", verbose=verbose)
     _start_t = time.time()
 
-    # Note that, according to manual pg 12-2
+    # Please note that, according to manual pg 12-2
     # when #CONF is executed, the 6487 is configured as follows:
     # ▪ All controls related to the selected function are defaulted to the *RST values.
     # ▪ The event control sources of the trigger model are set to immediate.
@@ -837,7 +837,7 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
 
     wait_operation_complete(port, poll_interval=0.1, timeout=5.0, verbose=verbose, debug=debug)
 
-    # notethat `:TRAC:FEED:CONT NEXT` enables the buffer and needs to be sent right before acquisition starts. After running `:INIT`, the buffer will change to back to `:TRAC:FEED:CONT NEVER`, and needs to be re-enabled before the next acquisition . If you dont do this, no new data will be stored in the buffer and subsequent queries to `:TRAC:DATA?` will return the same data until you re-enable the buffer with `:TRAC:FEED:CONT NEXT`.
+    # Please note that `:TRAC:FEED:CONT NEXT` enables the buffer and needs to be sent right before acquisition starts. After running `:INIT`, the buffer will change to back to `:TRAC:FEED:CONT NEVER`, and needs to be re-enabled before the next acquisition . If you dont do this, no new data will be stored in the buffer and subsequent queries to `:TRAC:DATA?` will return the same data until you re-enable the buffer with `:TRAC:FEED:CONT NEXT`.
 
     # resp = "0"
     # while resp == "0":
@@ -910,6 +910,7 @@ def parse_raw_waveform_data(raw):
         times.append(float(parts[i + 1]))
     df = pd.DataFrame({"Current_Amps": reads, "Time_Secs": times})
     return df
+    # return read, times
 
 
 if __name__ == "__main__":
