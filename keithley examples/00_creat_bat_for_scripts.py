@@ -2,6 +2,12 @@ import glob
 import os
 import sys
 
+if sys.platform != "win32":
+    print(
+        "This script generates Windows .bat files. To avoid confusion, this script will only run on Windows.\nExiting now!."
+    )
+    sys.exit(1)
+
 # Get the current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -11,7 +17,7 @@ python_files = glob.glob(os.path.join(current_dir, "*.py"))
 # get _current python executable name (e.g., python, python3, etc.)
 python_executable = os.path.basename(sys.executable)
 python_executable_folder = os.path.dirname(sys.executable)
-print(f"Current Python executable: {python_executable}")
+print(f"\n\nCurrent Python executable: {sys.executable}\n")
 
 # Create a .bat file to run each Python script
 
@@ -35,8 +41,12 @@ echo Exiting now.
 exit /b %rc%
 """
 
+if not python_files:
+    print("No Python files found in the current directory.")
+    sys.exit(0)
+
 for py_file in python_files:
-    if os.path.basename(py_file) == os.path.basename(__file__):
+    if os.path.normcase(os.path.abspath(py_file)) == os.path.normcase(os.path.abspath(__file__)):
         continue  # Skip this script itself
     with open(os.path.join(current_dir, f"{os.path.splitext(os.path.basename(py_file))[0]}.bat"), "w") as bat_file:
         # Get the base name of the Python file (without extension)
@@ -49,5 +59,7 @@ for py_file in python_files:
 
         print(f"* Created {base_name}.bat")
 
-print("DONE! Check folder  for the .bat files:")
+print("\nDONE! Check folder  for the .bat files:")
 print(f"{current_dir}")
+
+print("\nHOW-TO-USE: In Windows, you can double-click the .bat files to run the corresponding Python scripts.\n\n")
