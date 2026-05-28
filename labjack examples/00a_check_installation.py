@@ -7,9 +7,6 @@ import os
 import sys
 from labjack import ljm
 
-# This library
-import labjack_t8_ophyd as ljt8o
-
 # %%
 
 print(f"\n## Python version: {sys.version}")
