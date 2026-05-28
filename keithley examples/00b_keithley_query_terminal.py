@@ -1,9 +1,11 @@
 # %%
 
 import time
-from datetime import datetime
 
 import keithley_utils as kthu
+
+
+from wg_toolkit.logprint import print_info, print_warning, print_done, print_error
 
 
 _help_text = "=" * 32 + " [HELP] " + "=" * 32 + "\n"
@@ -110,10 +112,10 @@ def parse_input(s: str):
         try:
             i = int(s[1:])
             cmd = _numbered_commands[i][0]
-            print(_colorStr(f"[INFO] Quick-Command Selected: #{i} -> {cmd}", color="green", bold=True))
+            print_info(f"Quick-Command Selected: #{i} -> {cmd}")
             return cmd
         except (ValueError, IndexError):
-            print(_colorStr("[ERROR] invalid quick-command index", color="red", bold=True))
+            print_error("Invalid quick-command index")
             return None
     else:
         return s
@@ -133,7 +135,7 @@ def choose_device(devs):
                 return devs[sel]
         except Exception:
             pass
-        print(f"[ERROR] Enter an integer 0..{len(devs) - 1}.")
+        print_error(f"Enter an integer 0..{len(devs) - 1}.")
 
 
 def handle_input(s: str, serial_port: str) -> bool:
@@ -156,17 +158,8 @@ def handle_input(s: str, serial_port: str) -> bool:
         if _res is not None and "0," in _res[0:2]:
             break
         else:
-            kthu.print_verbose(
-                "[WARNING] Instrument reports error after command. Check error ABOVE for details.",
-                verbose=True,
-                color="red",
-                bold=True,
-            )
+            print_warning("Instrument reports error after command. Check error ABOVE for details.")
     return True
-
-
-def _datenowstr():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def main():
@@ -175,21 +168,21 @@ def main():
     try:
         devs = kthu.detect_keithley_devices(baudrate=None, verbose=True)
     except Exception as e:
-        print(f"[ERROR] Error during Keithley detection: {e}")
+        print_error(f"Error during Keithley detection: {e}")
         return
 
-    print("[INFO] ### Scan ENDED ###\n")
+    print_info("### Scan ENDED ###\n")
 
     if not devs:
-        print("[ERROR] No Keithley devices found. Exiting.")
+        print_error("No Keithley devices found. Exiting.")
         return
 
     dev = choose_device(devs)
     serial_port = dev["port"]
 
-    print("[INFO] Selected device:")
+    print_info("Selected device:")
     kthu.print_keithley_properties(dev)
-    print("\n[INFO] Enter SCPI commands (type 'help' or '?' for help, 'exit' to quit)")
+    print_info("Enter SCPI commands (type 'help' or '?' for help, 'exit' to quit)")
 
     try:
         while True:
@@ -197,7 +190,7 @@ def main():
             if not handle_input(s, serial_port):
                 break
     except KeyboardInterrupt:
-        print("\n[INFO] Cleaning up and exiting...")
+        print_info("\nCleaning up and exiting...")
         kthu.serial_query(":ABORT", serial_port, verbose=True)
 
 
