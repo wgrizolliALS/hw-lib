@@ -19,6 +19,10 @@ python_executable = os.path.basename(sys.executable)
 python_executable_folder = os.path.dirname(sys.executable)
 print(f"\n\nCurrent Python executable: {sys.executable}\n")
 
+if not python_files:
+    print("No Python files found in the current directory.")
+    sys.exit(0)
+
 # Create a .bat file to run each Python script
 
 
@@ -40,10 +44,6 @@ pause >nul
 echo Exiting now.
 exit /b %rc%
 """
-
-if not python_files:
-    print("No Python files found in the current directory.")
-    sys.exit(0)
 
 for py_file in python_files:
     if os.path.normcase(os.path.abspath(py_file)) == os.path.normcase(os.path.abspath(__file__)):
