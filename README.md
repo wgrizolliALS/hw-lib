@@ -2,7 +2,6 @@
 
 Standalone hardware acquisition library for LabJack T8 and Keithley instruments. No framework dependencies — works without Ophyd or Bluesky.
 
-For Ophyd/Bluesky integration see the companion repository [hw-lib-ophyd](https://github.com/wgrizolliALS/hw-lib-ophyd).
 
 ## Supported Hardware
 
@@ -37,28 +36,83 @@ hw-lib/
 
 All Python dependencies are managed via `pyproject.toml`.
 
-## Installation
+## Installation using 'uv'
 
-Install in editable mode from the project root:
+***Requirements***: make sure you have [`git`](https://git-scm.com/install/) and [`uv`](https://docs.astral.sh/uv/getting-started/installation/) installed on your system.
+
+### 1. `git clone` repository
+
+```bash
+git clone https://github.com/wgrizolliALS/standalone-hw-lib.git
+cd standalone-hw-lib
+```
+
+### 2. Core installation with `uv`
+
+This will install the core library and its dependencies. 
+
 
 ```bash
 # Core only (scripts and .py examples)
-uv pip install -e .
-
-# With Jupyter support (to run .ipynb notebooks, interactive plotting)
-uv pip install -e .[jupyter]
-
-# For development (nbstripout, pytest)
-uv pip install -e .[dev]
-
-# Full install
-uv pip install -e .[jupyter,dev]
+uv sync
 ```
 
-### Activate nbstripout (recommended)
+### 3. Optional but Recommended
 
-After installing the `dev` extra, run once inside the repo to strip notebook outputs before every commit:
+To run the Jupyter notebooks and use interactive plotting, install the `jupyter` extra.
 
 ```bash
-nbstripout --install
+# With Jupyter support (to run .ipynb notebooks, interactive plotting)
+uv sync --extra jupyter
 ```
+
+### 4. Optional for development
+
+For development purposes, including running tests and using `nbstripout` to clean notebook outputs, install the `dev` extra.
+
+```bash
+# For development (nbstripout, pytest)
+uv sync --extra dev
+nbstripout --install  # Activate nbstripout: Run once to set up nbstripout for this repo
+```
+
+### 5. All-in-one installation
+
+```bash
+# Full install
+uv sync --extra jupyter --extra dev
+nbstripout --install # Activate nbstripout: Run once to set up nbstripout for this repo
+```
+
+### 6. Activate the environment
+
+After installation, activate the environment to use the installed packages and run the examples.
+
+```bash
+# Activate the environment (Linux/Mac)
+source .venv/bin/activate
+# Activate the environment (Windows)
+.venv\Scripts\activate
+```
+
+### 7. Verify installation
+
+To verify that the installation was successful, you can run the following command to check that the `hw-lib` package is installed and accessible:
+
+```bash
+uv run python -c "import keithley_utils; print('hw-lib installed successfully!')"
+```
+
+Or run one of the example scripts to check that the hardware can be accessed:
+
+```bash
+uv run python "labjack examples/00a_check_installation.py"
+```
+
+## Usage
+
+After installation, you can run the example scripts and notebooks located in the `labjack examples/` and `keithley examples/` directories. These examples demonstrate how to acquire data from LabJack T8 and Keithley instruments using the standalone hardware library.
+
+***ATTENTION***: Make sure your LabJack T8 or Keithley instruments are properly connected and configured before running the examples.
+
+***Note***: Examples were developed and tested using VS Code with the Python extension. You can run the `.py` scripts directly from the command line or use the Jupyter notebooks for an interactive experience.
