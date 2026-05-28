@@ -2,7 +2,6 @@
 
 Standalone hardware acquisition library for LabJack T8 and Keithley instruments. No framework dependencies — works without Ophyd or Bluesky.
 
-
 ## Supported Hardware
 
 - **LabJack T8** — Multi-channel analog input, DAC output, DIO, streaming
@@ -49,8 +48,7 @@ cd standalone-hw-lib
 
 ### 2. Core installation with `uv`
 
-This will install the core library and its dependencies. 
-
+This will install the core library and its dependencies.
 
 ```bash
 # Core only (scripts and .py examples)
