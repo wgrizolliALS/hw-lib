@@ -42,8 +42,8 @@ All Python dependencies are managed via `pyproject.toml`.
 ### 1. `git clone` repository
 
 ```bash
-git clone https://github.com/wgrizolliALS/standalone-hw-lib.git
-cd standalone-hw-lib
+git clone https://github.com/wgrizolliALS/hw-lib.git
+cd hw-lib
 ```
 
 ### 2. Core installation with `uv`
