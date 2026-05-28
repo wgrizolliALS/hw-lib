@@ -14,6 +14,7 @@ dependencies = [
     "plotly",
     "matplotlib",
     "pyserial",
+    "wg-toolkit @ git+https://github.com/wgrizolliALS/wg-toolkit.git",
 ]
 
 [project.optional-dependencies]

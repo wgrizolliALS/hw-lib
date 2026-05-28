@@ -114,3 +114,11 @@ After installation, you can run the example scripts and notebooks located in the
 ***ATTENTION***: Make sure your LabJack T8 or Keithley instruments are properly connected and configured before running the examples.
 
 ***Note***: Examples were developed and tested using VS Code with the Python extension. You can run the `.py` scripts directly from the command line or use the Jupyter notebooks for an interactive experience.
+
+### Update `wg-toolkit` dependency
+
+The `wg-toolkit` package is used for enhanced logging and printing. If you want to update it to the latest version, you can run:
+
+```bash
+uv sync --upgrade-package wg-toolkit --extra jupyter --extra dev
+```
