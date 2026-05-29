@@ -4,7 +4,7 @@ import time
 
 import pandas as pd
 
-from wg_toolkit.logprint import printc, print_info, print_warning, print_error, print_log, print_done
+from wg_toolkit.logprint import printc, print_info, print_warning, print_error, print_log, print_done, print_success
 
 from wg_toolkit.ports import serial_query
 
@@ -77,24 +77,6 @@ def query_and_check(
         check_inst_errors(port, verbose=verbose, debug=debug)
         time.sleep(wait_between_cmds)
     return _res
-
-
-def close_serial_connection(port: str, verbose: bool = True):
-    """Attempt to close a serial connection on `port` if open.
-
-    Args:
-        port: Serial device path.
-        verbose: Enable informational printing about the close operation.
-    """
-    try:
-        ser = serial.Serial(port)
-        if ser.is_open:
-            ser.close()
-            print_info(f"Serial connection on {port} closed.", verbose=verbose)
-        else:
-            print_info(f"Serial connection on {port} was already closed.", verbose=verbose)
-    except Exception as e:
-        print_error(f"Failed to close serial connection on {port}: {e}", verbose=verbose)
 
 
 def check_inst_errors(port: str, verbose: bool = True, debug: bool = DEBUG):
@@ -550,7 +532,7 @@ def setup_waveform_acquisition(port: str, num_points: int = 60, verbose: bool = 
 
     if num_points > 100 or num_points < 1:
         print_warning(
-            f"Number of Points is {num_points} > 100. Note that Download of waveform using USB is slow, around 10-25 samples/seconds.\n\t(non-linear, higher numbers are faster, but total time keeps increase. For reference, 250 samples takes 10s to download))",
+            f"Number of Points is {num_points} > 100. Note that Download of waveform using USB is slow,\n around 10-25 samples/seconds.\n\t(non-linear, higher numbers are faster, but total time keeps\n increase. For reference, 250 samples takes 10s to download))",
             verbose=verbose,
         )
 
@@ -608,6 +590,8 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
 
     _start_acq_time = time.time()
 
+    print_warning("Acquisition of waveform. This can be slow. Please be patient...", verbose=verbose)
+
     # Arm acquisition
     query_and_check(":TRAC:CLE;:TRAC:FEED:CONT NEXT", port, verbose=verbose, debug=debug)
     query_and_check(
@@ -649,17 +633,16 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
 
     # Read all buffered readings and timestamps in one transfer
 
-    wait_operation_complete(port, poll_interval=0.1, timeout=5.0, verbose=verbose, debug=debug)
-
+    print_success(f"Acquisition COMPLETED!")
     print_log(
-        f"Acquisition COMPLETED. Start Download data... time elapsed: {time.time() - _start_acq_time:.2f}s",
+        f"Start Download data... time elapsed: {time.time() - _start_acq_time:.2f}s",
         verbose=verbose,
     )
     _downl_time = time.time()
 
     raw_waveform = query_and_check(":TRAC:DATA?", port, verbose=verbose, debug=debug)
 
-    print_log(f"Buffer Download COMPLETED. Download time: {time.time() - _downl_time:.2f} s.", verbose=verbose)
+    print_success(f"Buffer Download COMPLETED. Download time: {time.time() - _downl_time:.2f} s.", verbose=verbose)
 
     print_done(
         f"Acquisition and Download Completed. TOTAL Time elapsed: {time.time() - _start_total_time:.2f} s",
@@ -671,8 +654,10 @@ def acq_waveform(port: str, poll_interval: float = 0.01, verbose: bool = True, d
 
 def parse_raw_waveform_data(raw):
     """
-    Parse a comma-separated stream of READ,TIME,READ,TIME,... into lists.
-    Returns (reads: list[float], times: list[float_or_str]).
+    Parse a comma-separated stream of READ,TIME,READ,TIME,... into a DataFrame with columns Current_Amps and Time_Secs.
+
+    Usage:
+    df_raw = parse_raw_waveform_data(raw_waveform)
     """
     parts = [p.strip() for p in raw.strip().split(",") if p.strip() != ""]
     reads, times = [], []
