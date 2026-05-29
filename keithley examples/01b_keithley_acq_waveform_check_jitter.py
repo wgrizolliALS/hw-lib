@@ -9,6 +9,7 @@ import time
 import pandas as pd
 
 import keithley_utils as kthu  # your serial helper module;
+from wg_toolkit.logprint import printc
 
 POWER_LINE_FREQ = 60.0  # set to 50.0 if on 50 Hz mains
 POWER_LINE_PERIOD = 1 / POWER_LINE_FREQ
@@ -20,18 +21,18 @@ if __name__ == "__main__":
     pass
     # %% Scan For Instruments and Select Device
     _total_t_start = time.time()
-    kthu.print_verbose("[INFO] Starting Keithley waveform acquisition example...", color="purple", verbose=True)
+    printc("[INFO] Starting Keithley waveform acquisition example...", color="purple", verbose=True)
 
     try:
         devs = kthu.detect_keithley_devices(baudrate=None, verbose=True)
-        kthu.print_verbose("# Scan for hardware ENDED #\n", color="purple")
+        printc("# Scan for hardware ENDED #\n", color="purple")
 
     except Exception as e:
-        kthu.print_verbose(f"Error during Keithley detection: {e}", color="red")
+        printc(f"Error during Keithley detection: {e}", color="red")
 
     SERIALPORT = devs[0]["port"] if devs[0]["port"] else None  # type: ignore
     if SERIALPORT is None:
-        kthu.print_verbose("[ERROR] No valid serial port found for device.", color="red", bold=True)
+        printc("[ERROR] No valid serial port found for device.", color="red", bold=True)
         raise SystemExit(1)
 
     # %% Reset Instrument and Check for Errors
@@ -84,7 +85,7 @@ if __name__ == "__main__":
             _df_list.append(_df)
 
             _step += 1
-            kthu.print_verbose(
+            printc(
                 "\n########### [INFO] MAIN LOOP: Step "
                 + f"{_step} of {len(_sel_range_vals) * len(nplc_vals)}."
                 + f" Time elapsed: {time.time() - _start_t_main_loop:.2f} s\n",
@@ -102,16 +103,16 @@ if __name__ == "__main__":
     df["Time_msecs"] = df["Time_Secs"] * 1000
     df.to_csv("01b_keithley_waveform_data.csv", index=False, header=True)  # Save raw data to CSV for reference
 
-    kthu.print_verbose("DONE!", color="green", bold=True)
+    printc("DONE!", color="green", bold=True)
 
     # %% Print some results summary
-    kthu.print_verbose(f"[RESULTS] Acquired samples: {len(df)}", color="green")
+    printc(f"[RESULTS] Acquired samples: {len(df)}", color="green")
 
-    kthu.print_verbose("[RESULTS] Samples DataFrame Head 10:", color="green", bold=True)
+    printc("[RESULTS] Samples DataFrame Head 10:", color="green", bold=True)
     print(df.head(10))
-    kthu.print_verbose("[RESULTS] Samples DataFrame info:", color="green", bold=True)
+    printc("[RESULTS] Samples DataFrame info:", color="green", bold=True)
     print(df.info())
-    kthu.print_verbose("[RESULTS] Samples DataFrame describe:", color="green", bold=True)
+    printc("[RESULTS] Samples DataFrame describe:", color="green", bold=True)
     print(df.describe())
 
     # %% Post Processing
@@ -135,7 +136,7 @@ if __name__ == "__main__":
 
     for nplc in df["NPLC"].unique():
         act_time_ms = nplc / POWER_LINE_FREQ * 1000
-        kthu.print_verbose(
+        printc(
             f"[RESULTS] Expected acquisition time based on NPLC={nplc} and PL period: {act_time_ms:.4f} ms",
             color="blue",
         )
@@ -164,20 +165,20 @@ if __name__ == "__main__":
     df_post.to_csv("01b_keithley_postprocessing.csv", index=False, header=True)  # Save raw data to CSV for reference
 
     # %%
-    kthu.print_verbose(f"[RESULTS] Post-Processing Conditions: {len(df)}", color="green")
+    printc(f"[RESULTS] Post-Processing Conditions: {len(df)}", color="green")
 
-    kthu.print_verbose("[RESULTS] Post-Processing DataFrame Head 10:", color="green", bold=True)
+    printc("[RESULTS] Post-Processing DataFrame Head 10:", color="green", bold=True)
     print(df_post.head(10))
-    kthu.print_verbose("[RESULTS] Post-Processing DataFrame info:", color="green", bold=True)
+    printc("[RESULTS] Post-Processing DataFrame info:", color="green", bold=True)
     print(df_post.info())
 
     # %%
-    kthu.print_verbose("[RESULTS] Dead Time Only DataFrame:", color="green", bold=True)
+    printc("[RESULTS] Dead Time Only DataFrame:", color="green", bold=True)
     print(df_post.iloc[:, [1, 0, 2, 6, 7, 8]])
 
     # %%
     _total_t_end = time.time()
-    kthu.print_verbose(
+    printc(
         f"[RESULTS] Total execution time: {_total_t_end - _total_t_start:.4f} s", color="green", bold=True
     )
 

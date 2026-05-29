@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 import keithley_utils as kthu  # your serial helper module;
+from wg_toolkit.logprint import printc
 
 POWER_LINE_FREQ = 60.0  # set to 50.0 if on 50 Hz mains
 POWER_LINE_PERIOD = 1 / POWER_LINE_FREQ
@@ -27,18 +28,18 @@ if __name__ == "__main__":
     pass
     # %% Scan For Instruments and Select Device
     _total_t_start = time.time()
-    kthu.print_verbose("[INFO] Starting Keithley waveform acquisition example...", color="purple", verbose=True)
+    printc("[INFO] Starting Keithley waveform acquisition example...", color="purple", verbose=True)
 
     try:
         devs = kthu.detect_keithley_devices(baudrate=None, verbose=True)
-        kthu.print_verbose("# Scan for hardware ENDED #\n", color="purple")
+        printc("# Scan for hardware ENDED #\n", color="purple")
 
     except Exception as e:
-        kthu.print_verbose(f"Error during Keithley detection: {e}", color="red")
+        printc(f"Error during Keithley detection: {e}", color="red")
 
     SERIALPORT = devs[0]["port"] if devs[0]["port"] else None  # type: ignore
     if SERIALPORT is None:
-        kthu.print_verbose("[ERROR] No valid serial port found for device.", color="red", bold=True)
+        printc("[ERROR] No valid serial port found for device.", color="red", bold=True)
         raise SystemExit(1)
 
     # %% Reset Instrument and Check for Errors
@@ -71,7 +72,7 @@ if __name__ == "__main__":
 
     final_range = kthu.get_curr_range(SERIALPORT, verbose=True)
 
-    kthu.print_verbose(
+    printc(
         f"[INFO] Acquisition Finished. Elapsed time: {time.time() - _total_t_start:.2f} s", color="purple", bold=True
     )
 
@@ -81,11 +82,11 @@ if __name__ == "__main__":
 
     df["Time_msecs"] = df["Time_Secs"] * 1000
 
-    kthu.print_verbose(f"[RESULTS] Acquired samples: {len(df)}", color="green")
+    printc(f"[RESULTS] Acquired samples: {len(df)}", color="green")
     # %%
-    kthu.print_verbose("[RESULTS] Samples DataFrame Head 10:", color="green", bold=True)
+    printc("[RESULTS] Samples DataFrame Head 10:", color="green", bold=True)
     print(df.head(10))
-    kthu.print_verbose("[RESULTS] Samples DataFrame info:", color="green", bold=True)
+    printc("[RESULTS] Samples DataFrame info:", color="green", bold=True)
     print(df.info())
 
     # %% Post Processing
