@@ -14,7 +14,7 @@ dependencies = [
     "plotly",
     "matplotlib",
     "pyserial",
-    "wg-toolkit @ git+https://github.com/wgrizolliALS/wg-toolkit.git",
+    "wg-toolkit",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +33,10 @@ dev = [
     "nbstripout",
     "pytest",
 ]
+
+[tool.uv.sources]
+# wg-toolkit = { git = "https://github.com/wgrizolliALS/wg-toolkit.git" }
+wg-toolkit = { path = "C:/Users/xrayopt/Python Projects/wg-toolkit", editable = true }  # local dev
 
 [tool.setuptools]
 include-package-data = true
