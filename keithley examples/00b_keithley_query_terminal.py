@@ -5,7 +5,7 @@ import time
 import keithley_utils as kthu
 
 
-from wg_toolkit.logprint import print_info, print_warning, print_done, print_error
+from wg_toolkit.logprint import printc, print_info, print_warning, print_done, print_error
 
 
 _help_text = "=" * 32 + " [HELP] " + "=" * 32 + "\n"
@@ -74,20 +74,6 @@ for idx, (cmd, desc) in enumerate(_numbered_commands):
 
 _help_text += _help_quick_cmd
 _help_text += "=" * 30 + " [END HELP] " + "=" * 30 + "\n"
-
-
-def _colorStr(s, color=None, bold=False):
-    color_codes = {
-        "red": "91",
-        "green": "92",
-        "blue": "94",
-        "purple": "95",
-        "cyan": "96",
-    }
-
-    color_code = color_codes.get(color, "")  # type: ignore
-    bold_code = "1;" if bold else ""
-    return f"\033[{bold_code}{color_code}m{s}\033[0m"
 
 
 def parse_input(s: str):
@@ -186,7 +172,8 @@ def main():
 
     try:
         while True:
-            s = input(_colorStr("\n[INPUT] Enter Command:\n", color="cyan", bold=True)).strip()
+            printc("\n[INPUT] Enter Command:", color="cyan", bold=True)
+            s = input().strip()
             if not handle_input(s, serial_port):
                 break
     except KeyboardInterrupt:
